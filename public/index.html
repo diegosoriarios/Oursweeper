@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Multiplayer Minesweeper</title>
+    <style>
+        body { font-family: Arial; background: #f0f0f0; text-align: center; }
+        #gameInfo { margin: 20px auto; background: #fff; padding: 20px; border-radius: 8px; width: 300px; }
+        canvas { background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        button { margin: 10px; padding: 8px 16px; }
+    </style>
+</head>
+<body>
+    <h2>Multiplayer Minesweeper</h2>
+    <div id="gameInfo">
+        <div id="status"></div>
+        <div>Player 1 Score: <span id="score1">0</span></div>
+        <div>Player 2 Score: <span id="score2">0</span></div>
+        <button onclick="socket.emit('newGame')">New Game</button>
+        <div>Left click: Reveal<br>Right click: Flag</div>
+    </div>
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const CELL_SIZE = 40;
+        const GRID_SIZE = 10;
+        let game = null;
+        let playerNum = null;
+        let socket = io();
+
+        socket.on('playerNum', num => {
+            playerNum = num;
+            document.getElementById('status').textContent = 'You are Player ' + num;
+        });
+        socket.on('full', () => {
+            document.getElementById('status').textContent = 'Room is full. Try again later.';
+        });
+        socket.on('gameState', g => {
+            game = g;
+            drawBoard();
+            document.getElementById('score1').textContent = game.scores[1];
+            document.getElementById('score2').textContent = game.scores[2];
+            if (game.gameOver) {
+                document.getElementById('status').textContent = 'Game Over! ' +
+                    (game.scores[1] > game.scores[2] ? 'Player 1 wins!' :
+                     game.scores[2] > game.scores[1] ? 'Player 2 wins!' : 'Draw!');
+            } else if (playerNum) {
+                document.getElementById('status').textContent =
+                    'You are Player ' + playerNum + '. ' +
+                    (game.currentPlayer === playerNum ? 'Your turn!' : 'Waiting for opponent...');
+            }
+        });
+
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (!game) return;
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const cell = game.board[y][x];
+                    const xPos = x * CELL_SIZE;
+                    const yPos = y * CELL_SIZE;
+                    ctx.fillStyle = cell.isRevealed ? '#e0e0e0' : '#ffffff';
+                    ctx.fillRect(xPos, yPos, CELL_SIZE, CELL_SIZE);
+                    ctx.strokeStyle = '#999';
+                    ctx.strokeRect(xPos, yPos, CELL_SIZE, CELL_SIZE);
+                    if (cell.isRevealed) {
+                        if (cell.isMine) {
+                            ctx.fillStyle = '#ff0000';
+                            ctx.beginPath();
+                            ctx.arc(xPos + CELL_SIZE/2, yPos + CELL_SIZE/2, CELL_SIZE/4, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else if (cell.adjacentMines > 0) {
+                            ctx.fillStyle = '#000';
+                            ctx.font = '20px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText(cell.adjacentMines, xPos + CELL_SIZE/2, yPos + CELL_SIZE/2);
+                        }
+                    } else if (cell.isFlagged) {
+                        ctx.fillStyle = '#ff0000';
+                        ctx.beginPath();
+                        ctx.moveTo(xPos + CELL_SIZE/4, yPos + CELL_SIZE/4);
+                        ctx.lineTo(xPos + CELL_SIZE*3/4, yPos + CELL_SIZE/2);
+                        ctx.lineTo(xPos + CELL_SIZE/4, yPos + CELL_SIZE*3/4);
+                        ctx.fill();
+                    }
+                }
+            }
+        }
+
+        canvas.addEventListener('mousedown', function(event) {
+            if (!game || game.gameOver || game.currentPlayer !== playerNum) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
+            const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
+            if (event.button === 0) socket.emit('reveal', { x, y });
+            if (event.button === 2) socket.emit('flag', { x, y });
+        });
+        canvas.addEventListener('contextmenu', e => e.preventDefault());
+    </script>
+</body>
+</html>
