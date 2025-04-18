@@ -24,7 +24,7 @@ function createBoard() {
             };
         }
     }
-    // Place mines
+    
     let minesPlaced = 0;
     while (minesPlaced < MINE_COUNT) {
         const x = Math.floor(Math.random() * GRID_SIZE);
@@ -34,7 +34,7 @@ function createBoard() {
             minesPlaced++;
         }
     }
-    // Count adjacent mines
+    
     for (let y = 0; y < GRID_SIZE; y++) {
         for (let x = 0; x < GRID_SIZE; x++) {
             if (!board[y][x].isMine) {
@@ -55,33 +55,28 @@ function createBoard() {
     return board;
 }
 
-let game = {
-    board: createBoard(),
-    scores: { 1: 0, 2: 0 },
-    currentPlayer: 1,
-    gameOver: false,
-    players: []
-};
+const rooms = {}; // roomId -> { board, scores, currentPlayer, gameOver, players: [socketIds] }
 
-function revealCell(x, y, player) {
-    if (game.gameOver) return;
-    const cell = game.board[y][x];
+function revealCell(room, x, y, player) {
+    if (room.gameOver) return;
+    const cell = room.board[y][x];
     if (cell.isRevealed || cell.isFlagged) return;
     cell.isRevealed = true;
     if (cell.isMine) {
-        game.gameOver = true;
-        game.scores[player] -= 5;
-        revealAll();
+        room.gameOver = true;
+        room.scores[player] -= 5;
+        revealAll(room);
         return;
     }
-    game.scores[player]++;
+
+    room.scores[player]++;
     if (cell.adjacentMines === 0) {
         for (let dy = -1; dy <= 1; dy++) {
             for (let dx = -1; dx <= 1; dx++) {
                 const nx = x + dx, ny = y + dy;
                 if (nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE) {
-                    if (!game.board[ny][nx].isRevealed) {
-                        revealCell(nx, ny, player);
+                    if (!room.board[ny][nx].isRevealed) {
+                        revealCell(room, nx, ny, player);
                     }
                 }
             }
@@ -89,71 +84,107 @@ function revealCell(x, y, player) {
     }
 }
 
-function revealAll() {
+function revealAll(room) {
     for (let y = 0; y < GRID_SIZE; y++) {
         for (let x = 0; x < GRID_SIZE; x++) {
-            game.board[y][x].isRevealed = true;
+            room.board[y][x].isRevealed = true;
         }
     }
 }
 
-function toggleFlag(x, y) {
-    if (game.gameOver) return;
-    const cell = game.board[y][x];
+function toggleFlag(room, x, y) {
+    if (room.gameOver) return;
+    const cell = room.board[y][x];
     if (!cell.isRevealed) {
         cell.isFlagged = !cell.isFlagged;
     }
 }
 
 io.on('connection', (socket) => {
-    // Assign player number
-    if (game.players.length < 2) {
-        const playerNum = game.players.length + 1;
-        socket.playerNum = playerNum;
-        game.players.push(playerNum);
-        socket.emit('playerNum', playerNum);
-    } else {
-        socket.emit('full');
-        return;
-    }
-    socket.emit('gameState', game);
-
-    socket.on('reveal', ({ x, y }) => {
-        if (game.currentPlayer !== socket.playerNum || game.gameOver) return;
-        revealCell(x, y, socket.playerNum);
-        game.currentPlayer = game.currentPlayer === 1 ? 2 : 1;
-        io.emit('gameState', game);
-    });
-
-    socket.on('flag', ({ x, y }) => {
-        if (game.currentPlayer !== socket.playerNum || game.gameOver) return;
-        toggleFlag(x, y);
-        game.currentPlayer = game.currentPlayer === 1 ? 2 : 1;
-        io.emit('gameState', game);
-    });
-
-    socket.on('newGame', () => {
-        if (game.players.length === 2) {
-            game = {
-                board: createBoard(),
-                scores: { 1: 0, 2: 0 },
-                currentPlayer: 1,
-                gameOver: false,
-                players: [1, 2]
-            };
-            io.emit('gameState', game);
-        }
-    });
-
-    socket.on('disconnect', () => {
-        game = {
+    socket.on('createRoom', (callback) => {
+        let roomId;
+        do {
+            roomId = Math.random().toString(36).substr(2, 6);
+        } while (rooms[roomId]);
+        
+        rooms[roomId] = {
             board: createBoard(),
             scores: { 1: 0, 2: 0 },
             currentPlayer: 1,
             gameOver: false,
-            players: []
+            players: [socket.id]
         };
-        io.emit('gameState', game);
+        socket.join(roomId);
+        socket.roomId = roomId;
+        socket.playerNum = 1;
+        callback({ roomId, playerNum: 1 });
+        io.to(roomId).emit('gameState', rooms[roomId]);
+    });
+
+    socket.on('joinRoom', (roomId, callback) => {
+        const room = rooms[roomId];
+        if (!room) {
+            callback({ error: 'Room not found' });
+            return;
+        }
+        if (room.players.length >= 2) {
+            callback({ error: 'Room is full' });
+            return;
+        }
+        room.players.push(socket.id);
+        socket.join(roomId);
+        socket.roomId = roomId;
+        socket.playerNum = 2;
+        callback({ roomId, playerNum: 2 });
+        io.to(roomId).emit('gameState', room);
+    });
+
+    socket.on('reveal', ({ x, y }) => {
+        const roomId = socket.roomId;
+        if (!roomId) return;
+        const room = rooms[roomId];
+        if (!room || room.gameOver) return;
+        if (room.currentPlayer !== socket.playerNum) return;
+        revealCell(room, x, y, socket.playerNum);
+        room.currentPlayer = room.currentPlayer === 1 ? 2 : 1;
+        io.to(roomId).emit('gameState', room);
+    });
+
+    socket.on('flag', ({ x, y }) => {
+        const roomId = socket.roomId;
+        if (!roomId) return;
+        const room = rooms[roomId];
+        if (!room || room.gameOver) return;
+        if (room.currentPlayer !== socket.playerNum) return;
+        toggleFlag(room, x, y);
+        room.currentPlayer = room.currentPlayer === 1 ? 2 : 1;
+        io.to(roomId).emit('gameState', room);
+    });
+
+    socket.on('newGame', () => {
+        const roomId = socket.roomId;
+        if (!roomId) return;
+        const room = rooms[roomId];
+        if (!room || room.players.length < 2) return;
+        room.board = createBoard();
+        room.scores = { 1: 0, 2: 0 };
+        room.currentPlayer = 1;
+        room.gameOver = false;
+        io.to(roomId).emit('gameState', room);
+    });
+
+    socket.on('disconnect', () => {
+        const roomId = socket.roomId;
+        if (!roomId) return;
+        const room = rooms[roomId];
+        if (!room) return;
+        
+        room.players = room.players.filter(id => id !== socket.id);
+        if (room.players.length === 0) {
+            delete rooms[roomId];
+        } else {
+            io.to(roomId).emit('gameState', room);
+        }
     });
 });
 

@@ -1,24 +1,67 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-    <title>Multiplayer Minesweeper</title>
+    <title>Multiplayer Minesweeper Lobby</title>
     <style>
-        body { font-family: Arial; background: #f0f0f0; text-align: center; }
-        #gameInfo { margin: 20px auto; background: #fff; padding: 20px; border-radius: 8px; width: 300px; }
-        canvas { background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        button { margin: 10px; padding: 8px 16px; }
+        body {
+            font-family: Arial;
+            background: #f0f0f0;
+            text-align: center;
+            overflow: none;
+        }
+
+        canvas {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        button {
+            margin: 10px;
+            padding: 8px 16px;
+        }
     </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
+
 <body>
-    <h2>Multiplayer Minesweeper</h2>
-    <div id="gameInfo">
-        <div id="status"></div>
-        <div>Player 1 Score: <span id="score1">0</span></div>
-        <div>Player 2 Score: <span id="score2">0</span></div>
-        <button onclick="socket.emit('newGame')">New Game</button>
-        <div>Left click: Reveal<br>Right click: Flag</div>
+    <h2 class="text-3xl font-bold text-center mt-8 mb-6 text-blue-700">Oursweeper Lobby</h2>
+
+    <div id="lobby" class="mx-auto bg-white rounded-lg shadow-md p-8 w-full max-w-md mb-8">
+        <button onclick="createRoom()"
+            class="w-full mb-4 py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+            Create Room
+        </button>
+        <div class="flex items-center space-x-2 mb-4">
+            <input id="roomInput" placeholder="Enter Room ID" maxlength="6"
+                class="flex-1 border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <button onclick="joinRoom()"
+                class="py-2 px-4 bg-green-600 text-white rounded hover:bg-green-700 transition">
+                Join Room
+            </button>
+        </div>
+        <div id="lobbyStatus" class="text-red-600 text-sm mt-2"></div>
     </div>
-    <canvas id="gameCanvas" width="400" height="400"></canvas>
+
+    <div id="gameInfo" class="mx-auto bg-white rounded-lg shadow-md p-8 w-full max-w-md mb-8" style="display:none;">
+        <div id="status" class="mb-4 text-lg font-semibold text-center text-blue-700"></div>
+        <div class="flex justify-between mb-2">
+            <div>Player 1 Score: <span id="score1" class="font-bold">0</span></div>
+            <div>Player 2 Score: <span id="score2" class="font-bold">0</span></div>
+        </div>
+        <button onclick="socket.emit('newGame')"
+            class="w-full mb-4 py-2 px-4 bg-yellow-500 text-white rounded hover:bg-yellow-600 transition">
+            New Game
+        </button>
+        <div class="mb-2 text-gray-600">Left click: <span class="font-semibold">Reveal</span></div>
+        <div class="mb-2 text-gray-600">Right click: <span class="font-semibold">Flag</span></div>
+        <div class="text-gray-500 text-sm">Room ID: <span id="roomId" class="font-mono"></span></div>
+    </div>
+
+    <canvas id="gameCanvas" width="400" height="400" class="mx-auto block rounded-lg shadow-lg border border-gray-200"
+        style="display:none;"></canvas>
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const canvas = document.getElementById('gameCanvas');
@@ -26,16 +69,48 @@
         const CELL_SIZE = 40;
         const GRID_SIZE = 10;
         let game = null;
-        let playerNum = null;
+        let player = {
+            num: 0
+        };
         let socket = io();
+        let currentRoomId = null;
 
-        socket.on('playerNum', num => {
-            playerNum = num;
-            document.getElementById('status').textContent = 'You are Player ' + num;
-        });
-        socket.on('full', () => {
-            document.getElementById('status').textContent = 'Room is full. Try again later.';
-        });
+        function showLobby() {
+            document.getElementById('lobby').style.display = '';
+            document.getElementById('gameInfo').style.display = 'none';
+            canvas.style.display = 'none';
+        }
+        function showGame() {
+            document.getElementById('lobby').style.display = 'none';
+            document.getElementById('gameInfo').style.display = '';
+            canvas.style.display = '';
+        }
+
+        function createRoom() {
+            socket.emit('createRoom', ({ roomId, playerNum }) => {
+                if (roomId) {
+                    currentRoomId = roomId;
+                    player.num = playerNum;
+                    document.getElementById('roomId').textContent = roomId;
+                    showGame();
+                }
+            });
+        }
+        function joinRoom() {
+            const roomId = document.getElementById('roomInput').value.trim();
+            if (!roomId) return;
+            socket.emit('joinRoom', roomId, ({ error, roomId: joinedId, playerNum: num }) => {
+                if (error) {
+                    document.getElementById('lobbyStatus').textContent = error;
+                } else {
+                    currentRoomId = joinedId;
+                    player.num = num;
+                    document.getElementById('roomId').textContent = joinedId;
+                    showGame();
+                }
+            });
+        }
+
         socket.on('gameState', g => {
             game = g;
             drawBoard();
@@ -44,11 +119,11 @@
             if (game.gameOver) {
                 document.getElementById('status').textContent = 'Game Over! ' +
                     (game.scores[1] > game.scores[2] ? 'Player 1 wins!' :
-                     game.scores[2] > game.scores[1] ? 'Player 2 wins!' : 'Draw!');
-            } else if (playerNum) {
+                        game.scores[2] > game.scores[1] ? 'Player 2 wins!' : 'Draw!');
+            } else if (player.num) {
                 document.getElementById('status').textContent =
-                    'You are Player ' + playerNum + '. ' +
-                    (game.currentPlayer === playerNum ? 'Your turn!' : 'Waiting for opponent...');
+                    'You are Player ' + player.num + '. ' +
+                    (game.currentPlayer === player.num ? 'Your turn!' : 'Waiting for opponent...');
             }
         });
 
@@ -64,40 +139,44 @@
                     ctx.fillRect(xPos, yPos, CELL_SIZE, CELL_SIZE);
                     ctx.strokeStyle = '#999';
                     ctx.strokeRect(xPos, yPos, CELL_SIZE, CELL_SIZE);
+                    console.log(cell)
                     if (cell.isRevealed) {
                         if (cell.isMine) {
-                            ctx.fillStyle = '#ff0000';
-                            ctx.beginPath();
-                            ctx.arc(xPos + CELL_SIZE/2, yPos + CELL_SIZE/2, CELL_SIZE/4, 0, Math.PI * 2);
-                            ctx.fill();
+                            ctx.fillText('💥', xPos + CELL_SIZE / 2, yPos + CELL_SIZE / 2);
                         } else if (cell.adjacentMines > 0) {
                             ctx.fillStyle = '#000';
                             ctx.font = '20px Arial';
                             ctx.textAlign = 'center';
                             ctx.textBaseline = 'middle';
-                            ctx.fillText(cell.adjacentMines, xPos + CELL_SIZE/2, yPos + CELL_SIZE/2);
+                            ctx.fillText(cell.adjacentMines, xPos + CELL_SIZE / 2, yPos + CELL_SIZE / 2);
                         }
                     } else if (cell.isFlagged) {
                         ctx.fillStyle = '#ff0000';
                         ctx.beginPath();
-                        ctx.moveTo(xPos + CELL_SIZE/4, yPos + CELL_SIZE/4);
-                        ctx.lineTo(xPos + CELL_SIZE*3/4, yPos + CELL_SIZE/2);
-                        ctx.lineTo(xPos + CELL_SIZE/4, yPos + CELL_SIZE*3/4);
+                        ctx.moveTo(xPos + CELL_SIZE / 4, yPos + CELL_SIZE / 4);
+                        ctx.lineTo(xPos + CELL_SIZE * 3 / 4, yPos + CELL_SIZE / 2);
+                        ctx.lineTo(xPos + CELL_SIZE / 4, yPos + CELL_SIZE * 3 / 4);
                         ctx.fill();
                     }
                 }
             }
         }
 
-        canvas.addEventListener('mousedown', function(event) {
-            if (!game || game.gameOver || game.currentPlayer !== playerNum) return;
+        function handleMouseDown(event) {
+            console.log(game, player.num)
+            if (!game || game.gameOver || game.currentPlayer !== player.num) return;
             const rect = canvas.getBoundingClientRect();
             const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
             const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
             if (event.button === 0) socket.emit('reveal', { x, y });
             if (event.button === 2) socket.emit('flag', { x, y });
-        });
+        }
+
+        canvas.addEventListener('mousedown', (e) => handleMouseDown(e));
         canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+        showLobby();
     </script>
 </body>
+
 </html>
