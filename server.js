@@ -8,6 +8,10 @@ const io = socketIo(server);
 
 app.use(express.static(__dirname + '/public'));
 
+app.get('/healthz', (req, res) => {
+    res.json({ status: 'ok', rooms: Object.keys(rooms).length });
+});
+
 const GRID_SIZE = 10;
 const MINE_COUNT = 15;
 
@@ -188,4 +192,5 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(3000, () => console.log('Server running on http://localhost:3000'));
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
