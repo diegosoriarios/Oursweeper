@@ -144,7 +144,6 @@
                     ctx.fillRect(xPos, yPos, CELL_SIZE, CELL_SIZE);
                     ctx.strokeStyle = '#999';
                     ctx.strokeRect(xPos, yPos, CELL_SIZE, CELL_SIZE);
-                    console.log(cell)
                     if (cell.isRevealed) {
                         if (cell.isMine) {
                             ctx.fillText('💥', xPos + CELL_SIZE / 2, yPos + CELL_SIZE / 2);
@@ -168,7 +167,6 @@
         }
 
         function handleMouseDown(event) {
-            console.log(game, player.num)
             if (!game || game.gameOver || game.currentPlayer !== player.num) return;
             const rect = canvas.getBoundingClientRect();
             const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
