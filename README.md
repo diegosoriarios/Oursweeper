@@ -6,6 +6,13 @@ a mine and you lose 5 points — and the whole board is revealed. Highest score 
 
 Also includes a local hotseat **Co-op** mode for two players on one device.
 
+## Play online
+
+The game is live at **https://oursweeper-25cv.onrender.com**
+
+> Hosted on Render's free tier — the app sleeps after ~15 min idle,
+> so the first visit may take ~30s to wake up.
+
 ## How it works
 
 - Create a room and share the 6-character room ID; your friend joins from any browser
