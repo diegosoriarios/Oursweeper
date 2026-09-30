@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: oursweeper
+    runtime: node
+    plan: free
+    healthCheckPath: /healthz
+    buildCommand: npm ci
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
